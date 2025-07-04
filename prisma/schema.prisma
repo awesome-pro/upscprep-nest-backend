@@ -1,0 +1,676 @@
+generator client {
+  provider = "prisma-client-js"
+  output   = "../generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum UserRole {
+  TEACHER
+  STUDENT
+  ADMIN
+}
+
+enum UserStatus {
+  ACTIVE
+  VERIFICATION_PENDING
+  INACTIVE
+  SUSPENDED
+  DELETED
+}
+
+model User {
+  id              String           @id @default(cuid())
+  role            UserRole         @default(STUDENT)
+  status          UserStatus       @default(ACTIVE)
+  name            String
+  email           String           @unique
+  password        String
+  phoneNumber     String?
+  dateOfBirth     DateTime?        @db.Date
+  enrollmentDate  DateTime         @default(now())
+  
+  // Student related
+  purchases       Purchase[]
+  attempts        Attempt[]
+  streak          StudentStreak?
+  todos           Todo[]
+  progress        UserProgress[]
+  notifications   Notification[]
+  courseEnrollments CourseEnrollment[]
+  
+  // Teacher related
+  createdCourses  Course[]         @relation("CourseCreator")
+  createdExams    Exam[]           @relation("ExamCreator")
+  createdTestSeries TestSeries[]   @relation("TestSeriesCreator")
+  evaluatedAttempts     Attempt[]        @relation("EvaluatedBy")
+  evaluatedAnswers Answer[]        @relation("AnswerEvaluator")
+  testSeriesEnrollments TestSeriesEnrollment[]
+  
+  refreshTokens   RefreshToken[]
+  walletBalance   Int              @default(0) // In paisa
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  lastLoginAt DateTime @default(now())
+
+  @@map("users")
+  
+  notificationPreferences NotificationPreference[]
+}
+
+model RefreshToken {
+  id        String   @id @default(cuid())
+  token     String   @unique
+  expires   DateTime
+  createdAt DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId    String
+
+  @@index([userId])
+  @@map("refresh_tokens")
+}
+
+enum ExamType {
+  PRELIMS
+  MAINS
+}
+
+enum TestType {
+  SECTIONAL
+  MULTI_SECTIONAL
+  FULL_LENGTH
+  CHAPTER_TEST
+  MOCK_TEST
+}
+
+enum CourseType {
+  PRELIMS
+  MAINS
+  PRELIMS_MAINS_COMBO
+}
+
+enum PurchaseType {
+  COURSE
+  TEST_SERIES
+  INDIVIDUAL_EXAM
+}
+
+enum PurchaseStatus {
+  PENDING
+  COMPLETED
+  FAILED
+  REFUNDED
+  CANCELLED
+}
+
+// Updated Course model with comprehensive content support
+model Course {
+  id          String     @id @default(uuid())
+  title       String
+  description String
+  type        CourseType
+  subject     String     @default("GS1")  // e.g., GS1, GS2, CSAT, Optional-History
+  price       Int        // In paisa - 600000 for Prelims, 1000000 for Mains, 1400000 for combo
+  duration    Int        @default(365) // Valid for days (1 year = 365)
+  features    String[]
+  images      String[]
+  
+  // Course structure
+  modules     CourseModule[]
+  
+  // Meta information
+  teacherId   String
+  teacher     User       @relation("CourseCreator", fields: [teacherId], references: [id])
+  
+  isActive    Boolean    @default(true)
+  isPremium   Boolean    @default(true)
+  
+  // Analytics
+  totalStudents Int      @default(0)
+  totalModules  Int      @default(0)
+  totalDuration Int      @default(0) // Total content duration in minutes
+  
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+  
+  // Relations
+  enrollments CourseEnrollment[]
+  purchases   Purchase[]
+  exams       Exam[]
+
+  @@index([type, subject, isActive])
+  @@index([teacherId])
+  @@map("courses")
+}
+
+// Course content structure
+model CourseModule {
+  id          String        @id @default(cuid())
+  courseId    String
+  title       String
+  description String?
+  images      String[]
+  order       Int           @default(0)
+  isActive    Boolean       @default(true)
+  
+  course      Course        @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  lessons     CourseLesson[]
+  
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+
+  @@index([courseId, order])
+  @@map("course_modules")
+}
+
+model CourseLesson {
+  id          String      @id @default(cuid())
+  moduleId    String
+  title       String
+  description String?
+  order       Int         @default(0) // Lesson order in module
+  
+  // Content data based on type
+  textContent   String       @db.Text  @default("")
+  videoUrls    String[]     // For VIDEO type
+  videoDuration Int?      // Video duration in seconds
+  fileUrls    String[]    // For PDF, assignments, etc.
+  quizData    Json?       // For QUIZ type - questions and answers
+  
+  // Tracking
+  isPreview   Boolean     @default(false) // Can be accessed without purchase
+  isMandatory Boolean     @default(true)
+  
+  module      CourseModule @relation(fields: [moduleId], references: [id], onDelete: Cascade)
+  
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+
+  @@index([moduleId, order])
+  @@map("course_lessons")
+}
+
+// Student course enrollment and access
+model CourseEnrollment {
+  id          String    @id @default(cuid())
+  userId      String
+  courseId    String
+  purchaseId  String    @unique
+  
+  // Access control
+  startDate   DateTime  @default(now())
+  endDate     DateTime  // Valid till date
+  isActive    Boolean   @default(true)
+  
+  // Progress tracking
+  progressPercentage Float @default(0)
+  completedLessons   Int   @default(0)
+  totalLessons       Int   @default(0)
+  lastAccessedAt     DateTime @default(now())
+  
+  user        User      @relation(fields: [userId], references: [id])
+  course      Course    @relation(fields: [courseId], references: [id])
+  purchase    Purchase  @relation(fields: [purchaseId], references: [id])
+  
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@unique([userId, courseId])
+  @@index([userId, isActive])
+  @@map("course_enrollments")
+}
+
+model TestSeries {
+  id          String     @id @default(uuid())
+  title       String
+  description String?
+  type        ExamType   // PRELIMS or MAINS
+  price       Int        // 200000 for Prelims, 400000 for Mains (in paisa)
+  duration    Int        @default(365) // Valid for days
+  features    String[]
+  images      String[]
+  
+  // Test series configuration
+  totalTests  Int        @default(0)
+  isActive    Boolean    @default(true)
+  
+  // Teacher info
+  teacherId   String
+  teacher     User       @relation("TestSeriesCreator", fields: [teacherId], references: [id])
+  
+  // Relations
+  exams       Exam[]
+  purchases   Purchase[]
+  enrollments TestSeriesEnrollment[]
+  
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+
+  @@index([type, isActive])
+  @@index([teacherId])
+  @@map("test_series")
+}
+
+model TestSeriesEnrollment {
+  id           String     @id @default(cuid())
+  userId       String
+  testSeriesId String
+  purchaseId   String     @unique
+  
+  startDate    DateTime   @default(now())
+  endDate      DateTime
+  isActive     Boolean    @default(true)
+  
+  // Progress tracking
+  testsAttempted Int      @default(0)
+  totalTests     Int      @default(0)
+  averageScore   Float?
+  
+  user         User       @relation(fields: [userId], references: [id])
+  testSeries   TestSeries @relation(fields: [testSeriesId], references: [id])
+  purchase     Purchase   @relation(fields: [purchaseId], references: [id])
+  
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
+
+  @@unique([userId, testSeriesId])
+  @@map("test_series_enrollments")
+}
+
+enum ExamDifficulty {
+  EASY
+  MEDIUM
+  HARD
+}
+
+enum QuestionType {
+  MCQ           // Multiple choice question
+  DESCRIPTIVE   // Text-based answer question
+}
+
+model Question {
+  id               String            @id @default(uuid())
+  examId           String
+  exam             Exam              @relation(fields: [examId], references: [id], onDelete: Cascade)
+  type             QuestionType      // MCQ or DESCRIPTIVE
+  questionNumber   Int               // Question number in the exam (1, 2, 3, etc.)
+  text             String            // The question text, can contain markdown
+  marks            Int               // Marks allocated to this question
+  
+  // For MCQ questions
+  options          String[]             // Array of options for MCQ: [{id: "a", text: "Option A"}, ...]
+  correctOption    String?           // ID of the correct option for MCQ (e.g., "a", "b", "c", "d")
+  explanation      String?           // Explanation for the correct answer
+  
+  // For DESCRIPTIVE questions
+  expectedAnswerPoints String[]       // Key points expected in the answer
+  wordLimit        Int?              // Word limit for descriptive answers
+  modelAnswer      String?           // Model answer for reference
+  
+  // Common fields
+  difficulty       ExamDifficulty    @default(MEDIUM)
+  topic            String            @default("GS1") // Topic or subject area this question belongs to
+  imageUrls        String[]          // URLs to any images used in the question
+  isActive         Boolean           @default(true)
+  
+  // Relations
+  answers          Answer[]          // Student answers to this question
+  
+  createdAt        DateTime          @default(now())
+  updatedAt        DateTime          @updatedAt
+
+  @@index([examId, questionNumber])
+  @@index([type, difficulty])
+  @@map("questions")
+}
+
+model Answer {
+  id               String            @id @default(uuid())
+  attemptId        String
+  attempt          Attempt           @relation(fields: [attemptId], references: [id], onDelete: Cascade)
+  questionId       String
+  question         Question          @relation(fields: [questionId], references: [id], onDelete: Cascade)
+  
+  // For MCQ answers
+  selectedOption   String?           // The option selected by student for MCQ
+  
+  // For descriptive answers
+  answerText       String?           // The text answer provided by student
+  timeSpent       Int      @default(0) // In minutes
+  fileUrl          String?           // URL to the file uploaded by student
+  
+  // Evaluation
+  marks            Float?            // Marks awarded
+  feedback         String?           // Feedback on the answer
+  evaluatedBy      String?           // Teacher who evaluated (for descriptive)
+  evaluator        User?             @relation("AnswerEvaluator", fields: [evaluatedBy], references: [id])
+  evaluatedAt      DateTime?         // When the answer was evaluated
+  
+  createdAt        DateTime          @default(now())
+  updatedAt        DateTime          @updatedAt
+
+  @@unique([attemptId, questionId])  // One answer per question per attempt
+  @@index([questionId])
+  @@map("answers")
+}
+
+model Exam {
+  id               String            @id @default(uuid())
+  title            String
+  description      String?
+  type             ExamType          // PRELIMS or MAINS
+  testType         TestType
+  subject          String?           // e.g., GS1, CSAT, Essay
+  
+  // Test series relation (optional)
+  testSeriesId     String?
+  testSeries       TestSeries?       @relation(fields: [testSeriesId], references: [id])
+
+  // Course relation (optional)
+  courseId         String?
+  course           Course?           @relation(fields: [courseId], references: [id])
+  
+  // Question and file data
+  fileUrls         String[]
+  
+  // Exam configuration
+  duration         Int               // In minutes
+  totalMarks       Int
+  totalQuestions   Int
+  negativeMarking  Boolean           @default(false)
+  correctMark      Int               @default(4)
+  incorrectMark    Int               @default(0)
+  difficulty       ExamDifficulty    // Easy, Medium, Hard
+  
+  // Access control
+  isActive         Boolean           @default(true)
+  isFree           Boolean           @default(false)
+  
+  // Meta data
+  tags             String[]          // ["Polity", "Current Affairs"]
+  
+  // Teacher
+  teacherId        String
+  teacher          User              @relation("ExamCreator", fields: [teacherId], references: [id])
+  
+  // Relations
+  attempts         Attempt[]
+  answerKeys       AnswerKey[]
+  questions        Question[]        // New relation to structured questions
+  
+  createdAt        DateTime          @default(now())
+  updatedAt        DateTime          @updatedAt
+
+  @@index([type, testType, isActive])
+  @@index([teacherId, testSeriesId])
+  @@map("exams")
+}
+
+enum AttemptStatus {
+  IN_PROGRESS
+  COMPLETED
+  SUBMITTED
+  EVALUATED
+  ABANDONED
+}
+
+enum AccessType {
+  TEST_SERIES
+  COURSE
+  INDIVIDUAL
+}
+
+model Attempt {
+  id                String          @id @default(cuid())
+  userId            String
+  examId            String
+  
+  // Access tracking
+  accessType        AccessType      @default(TEST_SERIES)
+  enrollmentId      String?         // CourseEnrollment or TestSeriesEnrollment ID
+  
+  // Attempt status
+  status            AttemptStatus   @default(IN_PROGRESS)
+  startTime         DateTime        @default(now())
+  endTime           DateTime?
+  submitTime        DateTime?
+  
+  // Results
+  score             Float?
+  maxScore          Float           @default(0)
+  percentage        Float?
+  rank              Int?
+  correctAnswers    Int?
+  incorrectAnswers  Int?
+  unattempted       Int?
+  accuracy          Float?
+  
+  answerSheetUrl    String?
+  evaluationStatus  String?
+  feedback          String?
+  evaluatedBy       String?
+  
+  // Student responses
+  timeSpent       Int      @default(0) // In minutes
+  
+  user              User            @relation(fields: [userId], references: [id])
+  exam              Exam            @relation(fields: [examId], references: [id])
+  evaluator         User?           @relation("EvaluatedBy", fields: [evaluatedBy], references: [id])
+  answers           Answer[]        // Relation to structured answers
+  
+  createdAt         DateTime        @default(now())
+  updatedAt         DateTime        @updatedAt
+
+  @@index([userId, examId, status])
+  @@index([accessType, enrollmentId])
+  @@map("attempts")
+}
+
+model AnswerKey {
+  id            String   @id @default(cuid())
+  examId        String
+  version       String   @default("A") // Set A, Set B, etc.
+  answerData    Json     // Correct answers and explanations
+  isOfficial    Boolean  @default(true)
+  
+  exam          Exam     @relation(fields: [examId], references: [id])
+  
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@unique([examId, version])
+  @@map("answer_keys")
+}
+
+// Simplified Purchase model
+model Purchase {
+  id                     String         @id @default(cuid())
+  userId                 String
+  type                   PurchaseType   // COURSE, TEST_SERIES, INDIVIDUAL_EXAM
+  
+  // What was purchased
+  courseId               String?        // If buying a course
+  testSeriesId           String?        // If buying test series
+  examId                 String?        // If buying individual exam
+  
+  // Pricing
+  amount                 Int            // In paisa
+  discount               Int?           // Discount applied
+  finalAmount            Int            // Final amount after discount
+  currency               String         @default("INR")
+  
+  // Payment details
+  status                 PurchaseStatus @default(PENDING)
+  razorpayOrderId        String?
+  razorpayPaymentId      String?
+  razorpaySignature      String?
+  
+  // Access period
+  validFrom              DateTime       @default(now())
+  validTill              DateTime       // 1 year from purchase
+  
+  metadata               Json           @default("{}")
+  
+  user                   User           @relation(fields: [userId], references: [id])
+  course                 Course?        @relation(fields: [courseId], references: [id])
+  testSeries             TestSeries?    @relation(fields: [testSeriesId], references: [id])
+  
+  // Relations to enrollments
+  courseEnrollment       CourseEnrollment?
+  testSeriesEnrollment   TestSeriesEnrollment?
+  
+  createdAt              DateTime       @default(now())
+  updatedAt              DateTime       @updatedAt
+
+  @@index([userId, status])
+  @@index([type, status])
+  @@map("purchases")
+}
+
+enum EntityType {
+  COURSE
+  MODULE
+  LESSON
+  EXAM
+  ATTEMPT
+  TEST_SERIES
+}
+
+model UserProgress {
+  id              String   @id @default(cuid())
+  userId          String
+  // Entity being tracked
+  entityId        String
+  entityType      EntityType
+  
+  // Progress tracking
+  accuracy        Float?   
+  score           Float?    // Score achieved (for exams/quizzes)
+  isCompleted     Boolean   @default(false)
+  percentageCompleted      Float?    // Percentage completed (for exams/quizzes)
+  completedAt     DateTime?
+  timeSpent       Int       @default(0) // In seconds
+  lastPosition    Int       @default(0) // For videos - last watched position in seconds
+  lastAccessedAt  DateTime  @default(now()) // When user last accessed this entity
+  visitCount      Int       @default(1) // How many times user accessed this entity
+  
+  // Detailed progress data
+  metadata        Json      @default("{}") // Entity-specific details based on entityType
+  weeklyProgress  Json      @default("{}") // Last 4 weeks performance data
+  monthlyProgress Json      @default("{}") // Last 12 months performance data
+  
+  // Relations
+  user            User     @relation(fields: [userId], references: [id])
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@index([userId])
+  @@index([entityType, entityId])
+  @@unique([userId, entityId, entityType])
+  @@map("user_progress")
+}
+
+model StudentStreak {
+  id                String   @id @default(cuid())
+  userId            String   @unique
+  currentStreak     Int      @default(0)
+  longestStreak     Int      @default(0)
+  lastActivity      DateTime @default(now())
+  totalDays         Int      @default(0)
+  
+  // Daily activity tracking
+  dailyActivities   Json     @default("{}") // JSON record of daily activities by date
+  
+  // Activity types that count for streak
+  studyMinutes      Int      @default(0) // Total study time today
+  testsAttempted    Int      @default(0) // Tests attempted today
+  lessonsCompleted  Int      @default(0) // Lessons completed today
+  questionsAnswered Int      @default(0) // Questions answered today
+  pointsEarned      Int      @default(0) // Learning points earned today
+  
+  // Weekly and monthly aggregates
+  weeklyStats       Json     @default("{}") // Weekly activity stats
+  monthlyStats      Json     @default("{}") // Monthly activity stats
+  
+  user              User     @relation(fields: [userId], references: [id])
+
+  @@map("student_streaks")
+}
+
+model Todo {
+  id          String   @id @default(cuid())
+  userId      String
+  title       String
+  description String?
+  completed   Boolean  @default(false)
+  priority    String?  // High, Medium, Low
+  category    String?  // Study, Revision, Test, Personal
+  dueDate     DateTime?
+  
+  courseId    String?
+  examId      String?
+  
+  user        User     @relation(fields: [userId], references: [id])
+  
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([userId, completed])
+  @@map("todos")
+}
+
+enum NotificationType {
+  COURSE
+  TEST_SERIES
+  EXAM
+  ATTEMPT
+  EVALUATION
+  REMINDER
+  SYSTEM
+  OTHER
+}
+
+enum NotificationChannel {
+  EMAIL
+  IN_APP
+  PUSH
+}
+
+model NotificationPreference {
+  id              String    @id @default(cuid())
+  user            User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId          String
+  type            NotificationType
+  channel         NotificationChannel
+  enabled         Boolean   @default(true)
+
+  @@unique([userId, type, channel])
+  @@index([userId])
+}
+
+model Notification {
+  id        String   @id @default(cuid())
+  userId    String
+  title     String
+  message   String
+  type      NotificationType
+  
+  metadata Json @default("{}")
+  
+  isRead    Boolean  @default(false)
+  
+  actionUrl String?
+  actionData Json?
+  
+  user      User     @relation(fields: [userId], references: [id])
+  
+  createdAt DateTime @default(now())
+
+  @@index([userId, isRead])
+  @@index([type])
+  @@map("notifications")
+}
