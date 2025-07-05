@@ -39,7 +39,7 @@ export class AuthController {
       path: '/',
       maxAge: 24 * 60 * 60 * 1000, // 24 hours in milliseconds
       domain:
-        process.env.NODE_ENV === 'production' ? '.cynosnexus.com' : undefined,
+        process.env.NODE_ENV === 'production' ? '.abhinandan.pro' : undefined,
     });
 
     res.cookie('refreshToken', result.refreshToken, {
@@ -49,7 +49,7 @@ export class AuthController {
       path: '/',
       maxAge: 15 * 24 * 60 * 60 * 1000, // 15 days in milliseconds
       domain:
-        process.env.NODE_ENV === 'production' ? '.cynosnexus.com' : undefined,
+        process.env.NODE_ENV === 'production' ? '.abhinandan.pro' : undefined,
     });
 
     return { user: result.user };
@@ -71,7 +71,7 @@ export class AuthController {
       path: '/',
       maxAge: 24 * 60 * 60 * 1000,
       domain:
-        process.env.NODE_ENV === 'production' ? '.cynosnexus.com' : undefined,
+        process.env.NODE_ENV === 'production' ? '.abhinandan.pro' : undefined,
     });
 
     res.cookie('refreshToken', result.refreshToken, {
@@ -81,7 +81,7 @@ export class AuthController {
       path: '/',
       maxAge: 15 * 24 * 60 * 60 * 1000,
       domain:
-        process.env.NODE_ENV === 'production' ? '.cynosnexus.com' : undefined,
+        process.env.NODE_ENV === 'production' ? '.abhinandan.pro' : undefined,
     });
 
     return result.user;
@@ -110,7 +110,7 @@ export class AuthController {
       path: '/',
       maxAge: 24 * 60 * 60 * 1000,
       domain:
-        process.env.NODE_ENV === 'production' ? '.cynosnexus.com' : undefined,
+        process.env.NODE_ENV === 'production' ? '.abhinandan.pro' : undefined,
     });
 
     res.cookie('refreshToken', result.refreshToken, {
@@ -120,7 +120,7 @@ export class AuthController {
       path: '/',
       maxAge: 15 * 24 * 60 * 60 * 1000,
       domain:
-        process.env.NODE_ENV === 'production' ? '.cynosnexus.com' : undefined,
+        process.env.NODE_ENV === 'production' ? '.abhinandan.pro' : undefined,
     });
 
     // Return only the user data (TokenResponse)
@@ -183,7 +183,7 @@ export class AuthController {
       sameSite: 'none',
       path: '/',
       domain:
-        process.env.NODE_ENV === 'production' ? '.cynosnexus.com' : undefined,
+        process.env.NODE_ENV === 'production' ? '.abhinandan.pro' : undefined,
     });
 
     res.clearCookie('refreshToken', {
@@ -192,7 +192,7 @@ export class AuthController {
       sameSite: 'none',
       path: '/',
       domain:
-        process.env.NODE_ENV === 'production' ? '.cynosnexus.com' : undefined,
+        process.env.NODE_ENV === 'production' ? '.abhinandan.pro' : undefined,
     });
 
     return { success: true, message: 'Logged out successfully' };
