@@ -26,7 +26,8 @@ async function bootstrap() {
     ) => {
       if (isProduction) {
         const allowedDomains = [
-          'https://vercel.cynosnexus.com',
+          `${process.env.FRONTEND_URL}`,
+          'upscprep.abhinandan.pro',
           'https://localhost:3000',
           'http://localhost:3000',
         ];
